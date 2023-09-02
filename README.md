@@ -42,13 +42,54 @@ Notes:
 
 Analyser le code du fichier `DefinitionCleaner.scala`
 Vous avez remarqué que le résultat retourné par Kafka lorsqu'on effectue une recherche est très brut. Nous allons ici le reformatter pour qu'il soit plus présentable.  
-a) Tout d'abord nous devons lire les données publiées sur le topic `spark-streaming-topic`  
-```
+a) Tout d'abord nous devons lire les données publiées sur le topic `spark-streaming-topic`  depuis le serveur kafka (`kafka-broker:9093`) que nous avons lancé plus haut.
+```(scala)
     val df = spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "kafka-broker:9093")
       .option("subscribe", "spark-streaming-topic")
-      //      .option("startingOffsets", "earliest")
-      //      .option("endingOffsets", "latest")
       .load()
 ```
+
+b) Ensuite nous devons lancer la lecture en continue des données qui sont publiées sur le topic.  Le code ci-dessous permet d'atteindre cet objectif.  
+```
+    val tdf = df.selectExpr("CAST(value AS STRING)")
+      .select("value")
+      .writeStream
+      .outputMode("append")
+      .format("console")
+      .option("truncate", "false")
+      .start()
+```
+Notes: 
+  - `df.printSchema()` permet d'afficher la structure des données lues depuis kafka.  
+  - le champ `value` contient la donnée qui nous intéresse. Nous le transformons en `STRING`car la donnée est en format JSON.  
+  - on fait le choix ici d'afficher les données sur la console. On peut les écrire dans un fichier/base de données.  
+  - le mode d'écriture est `append`. Cela pourrait être `complete` ou `update`.  
+c) En fin nous attends la fin du processus  avec le code `tdf.awaitTermination()`
+
+Une seconde! Quand est-ce qu'on transforme la donnée?
+OK. Il nous faut détecter lorsqu'une nouvelle donnée est disponible. Pour ce faire nous allons utiliser les listeners.  
+```
+    spark.streams.addListener(new StreamingQueryListener() {
+      override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
+        println("new query started: " + queryStarted.id)
+      }
+
+      override def onQueryTerminated(queryTerminated: QueryTerminatedEvent): Unit = {
+        println("new query terminated: " + queryTerminated.id)
+      }
+
+      override def onQueryProgress(queryProgress: QueryProgressEvent): Unit = {
+        println("new query made progress: " + queryProgress.progress)
+      }
+    })
+```
+## TODO
+Voici un exemple d'une donnée lue depuis le topic `spark-streaming-topic`:  
+```
+
+```
+Il faut:  
+- nettoyer la donnée du champ `definition` (supprimer les lignes vides, etc.)
+- Republier la donnée nettoyées sur le topic du champ `topic`.  
