@@ -16,6 +16,7 @@ object DefinitionCleaner {
     logger.info("Initializing spark context...")
     val spark: SparkSession = SparkSession.builder()
       .appName(s"DefinitionCleaner")
+      .master("local[*]")
       .getOrCreate()
 
 

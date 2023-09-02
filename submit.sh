@@ -8,7 +8,6 @@ spark-submit \
   --executor-cores $SPARK_WORKER_CORES \
   --executor-memory $SPARK_WORKER_MEMORY \
   --num-executors $SPARK_EXECUTORS \
-  --files $SPARK_APP_FILES \
   --class $SPARK_APP_CLASS \
   --packages $SPARK_PACKAGES \
   --conf spark.driver.extraJavaOptions="-Divy.cache.dir=/tmp -Divy.home=/tmp" \
