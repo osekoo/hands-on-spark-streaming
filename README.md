@@ -101,7 +101,7 @@ permet d'atteindre cet objectif.
 Une seconde! Quand est-ce qu'on transforme la donnée?  
 OK. Il nous faut détecter lorsqu'une nouvelle donnée est disponible. Pour ce faire nous allons utiliser les listeners.
 
-```
+```scala
     spark.streams.addListener(new StreamingQueryListener() {
       override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
         println("new query started: " + queryStarted.id)
@@ -125,7 +125,7 @@ Ce script permet de lancer les différents services docker et lancer notre packa
 
 Voici un exemple d'une donnée lue depuis le topic `spark-streaming-topic`:
 
-```(json)
+```json
 {
    "word": "orage",
    "definition": "\nDéfinition de \norage\n\n​​​\n\nVotre navigateur ne prend pas en charge audio.\n\n nom masculin\n\nPerturbation atmosphérique violente, caractérisée par des phénomènes électriques (éclairs, tonnerre), souvent accompagnée de pluie, de vent. ➙ tempête. L'orage menace, éclate, gronde. Une pluie d'orage.\n\nOrage magnétique*.\n\nOrage solaire*.\n\nau figuré Trouble qui éclate ou menace d'éclater.\n\nlocution, familier Il y a de l'orage dans l'air. ➙ électricité.\n\nMédecine Orage cytokinique : choc* cytokinique.\n\n",
