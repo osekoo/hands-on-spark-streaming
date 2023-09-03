@@ -1,7 +1,7 @@
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
 /**
  * Implements Streaming data processor using Spark SQL Stream
@@ -19,38 +19,48 @@ object DefinitionCleaner {
       .master("local[*]")
       .getOrCreate()
 
+    // defining input stream data type (word, definition, response_topic)
+    val definitionSchema = new StructType()
+      .add(StructField("word", StringType, nullable = true))
+      .add(StructField("definition", StringType, nullable = true))
+      .add(StructField("response_topic", StringType, nullable = true))
 
-    spark.streams.addListener(new StreamingQueryListener() {
-      override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
-        println("Query started: " + queryStarted.id)
-      }
-
-      override def onQueryTerminated(queryTerminated: QueryTerminatedEvent): Unit = {
-        println("Query terminated: " + queryTerminated.id)
-      }
-
-      override def onQueryProgress(queryProgress: QueryProgressEvent): Unit = {
-        println("Query made progress: " + queryProgress.progress)
-      }
-    })
-
-    val df = spark.readStream
+    // reading data from kafka topic
+    val inputStream = spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "kafka-broker:9093")
       .option("subscribe", "spark-streaming-topic")
       .load()
 
-    df.printSchema()
+    inputStream.printSchema() // debug purpose
 
-    val tdf = df.selectExpr("CAST(value AS STRING)")
-      .select("value")
-      .writeStream
+    // Udf function to use to transform our input data
+    val transformationUdf = udf((definition: String) => {
+      // TODO add the transformation code here
+      definition
+    })
+
+    // perform transformation here
+    val outputDf = inputStream.selectExpr("cast(value as string)")
+      .select(from_json(col("value"), definitionSchema).as("data"))
+      .select(col("data.word"),
+        transformationUdf(col("data.definition")) // don't forget to apply the transformation
+          .as("definition")
+      )
+
+    outputDf.printSchema() // debug purpose
+
+    // displaying the transformed data to the console for debug purpose
+    val streamConsoleOutput = outputDf.writeStream
       .outputMode("append")
       .format("console")
       .option("truncate", "false")
       .start()
 
-    tdf.awaitTermination()
-  }
+    // sending the transformed data to kafka
+    // TODO add kafka streaming code here
 
+    // waiting the query to complete (blocking call)
+    streamConsoleOutput.awaitTermination()
+  }
 }

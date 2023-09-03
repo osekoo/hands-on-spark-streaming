@@ -1,6 +1,7 @@
 #!/bin/bash
 
-docker build -t spark-app .
+docker build -t osekoo/spark-streaming-app .
 
-docker-compose up spark-worker -d
-docker-compose up spark-app
+docker compose down --remove-orphans
+docker-compose up spark-streaming-worker -d
+docker-compose up spark-streaming-app
