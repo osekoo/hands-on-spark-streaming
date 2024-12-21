@@ -224,6 +224,7 @@ object MainApp {
           .as("definition"))
       .select(col("word"), explode(col("definition")))
       .toDF("word", "token", "count")
+      .where(col("count") > 1) // filter out words with less than 2 occurrences
       .filter(len(col("token")) > 2) // filter out words with less than 2 occurrences
 
     outputDf.printSchema() // debug purpose
