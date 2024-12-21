@@ -290,10 +290,12 @@ Replace the default consumer logic with the following in `consumer.py`:
 
 ```python
 import json
+
 from kafka import KafkaConsumer
 
 BROKER = 'localhost:9092'
 TOPIC = 'word-count-results'
+
 
 def consume_word_counts():
     """
@@ -312,8 +314,10 @@ def consume_word_counts():
         result = message.value
         print(f"Word Count Result: {result}")
 
+
 if __name__ == "__main__":
     consume_word_counts()
+
 ```
 
 ### **Run the Consumer**
