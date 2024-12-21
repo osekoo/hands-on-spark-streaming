@@ -189,7 +189,7 @@ object MainApp {
   def main(args: Array[String]): Unit = {
     val kafkaBroker = "kafka-broker:9093"
     val definitionTopic = "definitions"
-    val outputTopic = "word-count-results"
+    val wordCountTopic = "word-count-results"
 
     val spark: SparkSession = SparkSession.builder()
       .appName(s"SparkWordCountStreaming")
@@ -214,20 +214,17 @@ object MainApp {
     inputStream.printSchema() // debug purpose
 
     // Udf function to use to transform our input data
-    val transformationUdf = udf((definition: String) => {
-      transform(definition)
-    })
+    val transformationUdf = udf(transform _)
 
     // perform transformation here
     val outputDf = inputStream.selectExpr("cast(value as string)")
       .select(from_json(col("value"), definitionSchema).as("data"))
       .select(col("data.word"),
-        transformationUdf(col("data.definition")) // don't forget to apply the transformation
+        transformationUdf(col("data.word"), col("data.definition")) // don't forget to apply the transformation
           .as("definition"))
       .select(col("word"), explode(col("definition")))
       .toDF("word", "token", "count")
-      .filter(col("word") =!= col("token"))
-      .filter(length(col("token")) > 1)
+      .filter(len(col("token")) > 2) // filter out words with less than 2 occurrences
 
     outputDf.printSchema() // debug purpose
 
@@ -246,7 +243,7 @@ object MainApp {
       .outputMode("append")
       .format("kafka")
       .option("kafka.bootstrap.servers", kafkaBroker)
-      .option("topic", outputTopic)
+      .option("topic", wordCountTopic)
       .option("checkpointLocation", "/tmp/checkpoint") // required in kafka mode (the behaviour hard coded in the api!)
       .start()
 
@@ -254,21 +251,22 @@ object MainApp {
     streamConsoleOutput.awaitTermination()
   }
 
-  private def transform(definition: String): Map[String, Int] = {
-    val result = definition.split("\n")
-      .filter(_.nonEmpty) // removing blank lines...
-      .flatMap(_.split("\\W+"))
-      .foldLeft(Map.empty[String, Int]) {
-        (count, word) => count + (word -> (count.getOrElse(word, 0) + 1))
-      }
-    // order by count
-    val orderedResult = result.toSeq.sortBy(-_._2)
-      .toMap
+  private def transform(word: String, definition: String): Map[String, Int] = {
+    val result = definition.toLowerCase.split("\\W+") // split by non-word characters
+      .filter(_.nonEmpty) // remove empty strings
+      .groupBy(identity) // group by word
+      .mapValues(_.length) // count words
+
+    // e.g. remove stop words, apply stemming, etc.
+    // remove stop words
+    val stopWords = Set(word, "so", "a", "an", "the", "is", "are", "am", "and", "or", "not", "for", "to", "in", "on", "at", "by", "with", "as", "of", "from", "that", "this", "these", "those", "there", "here", "where", "when", "how", "why", "what", "which", "who", "whom", "whose", "whom", "whomsoever", "whosoever", "whosever", "whosesoever")
+    val cleanedWords = result.filterKeys(!stopWords.contains(_))
+
+    // apply stemming
+
     // you can apply other transformation here as per your inspiration
 
-    // show most frequent words
-    orderedResult.take(10).foreach(println)
-    result
+    cleanedWords
   }
 }
 ```
