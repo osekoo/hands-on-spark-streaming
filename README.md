@@ -138,8 +138,38 @@ python producer.py
    ```bash
    sbt new osekoo/spark-scala.g8
    ```
-2. Follow prompts to name your project (e.g., `spark-word-count-streaming`).
+2. Follow prompts to name your project (e.g., `spark-word-count-streaming`) and leave the default parameters.
+3. Update `build.sbt` with kafka dependencies
+```scala
+name := "spark-word-count-streaming"
 
+version := "0.1"
+
+scalaVersion := "2.12.18"
+
+val sparkVersion = "3.5.2"
+
+libraryDependencies ++= Seq(
+  "org.apache.spark" %% "spark-core" % sparkVersion,
+  "org.apache.spark" %% "spark-sql" % sparkVersion,
+  "org.apache.spark" %% "spark-mllib" % sparkVersion % "provided",
+  "org.apache.spark" %% "spark-sql-kafka-0-10" % sparkVersion,
+  "org.apache.spark" %% "spark-streaming-kafka-0-10" % sparkVersion
+)
+```
+3. Update spark-submit with kafka dependencies
+```bash
+#!/bin/bash
+spark-submit \
+    --deploy-mode client \
+    --master "$SPARK_MASTER_URL" \
+    --executor-cores 4 \
+    --executor-memory 2G \
+    --num-executors 1 \
+    --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.2,org.apache.spark:spark-streaming-kafka-0-10_2.12:3.5.2 \
+    --class "MainApp" \
+    "target/scala-2.12/spark-word-count-streaming_2.12-0.1.jar" \
+```
 
 
 ### **Code: Word Count Processor**
@@ -147,82 +177,118 @@ python producer.py
 Replace the default app logic with the following in `MainApp.scala`:
 
 ```scala
-import org.apache.spark.SparkConf
-import org.apache.spark.streaming.{Seconds, StreamingContext}
-import org.apache.spark.streaming.kafka010._
-import org.apache.kafka.common.serialization.StringDeserializer
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import java.util.Properties
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
+/**
+ * Implements Streaming data processor using Spark SQL Stream
+ */
 object MainApp {
+
   def main(args: Array[String]): Unit = {
-    val kafkaBroker = "http://localhost:9092"
+    val kafkaBroker = "kafka-broker:9093"
+    val definitionTopic = "definitions"
+    val outputTopic = "word-count-results"
 
-    val conf = new SparkConf().setAppName("KafkaWordCountStreaming")")
-    val ssc = new StreamingContext(conf, Seconds(5))
+    val spark: SparkSession = SparkSession.builder()
+      .appName(s"SparkWordCountStreaming")
+      .getOrCreate()
 
-    // Kafka consumer configuration
-    val kafkaParams = Map[String, Object](
-      "bootstrap.servers" -> kafkaBroker,
-      "key.deserializer" -> classOf[StringDeserializer],
-      "value.deserializer" -> classOf[StringDeserializer],
-      "group.id" -> "word-count-group",
-      "auto.offset.reset" -> "earliest",
-      "enable.auto.commit" -> (false: java.lang.Boolean)
-    )
-    val topics = Array("definitions")
-    val stream = KafkaUtils.createDirectStream[String, String](
-      ssc,
-      LocationStrategies.PreferConsistent,
-      ConsumerStrategies.Subscribe[String, String](topics, kafkaParams)
-    )
+    spark.sparkContext.setLogLevel("ERROR")
 
-    // Process each definition
-    val definitions = stream.map(record => record.value())
-    val wordCounts = definitions
-      .flatMap(record => {
-        val json = ujson.read(record)
-        val definition = json("definition").str
-        definition.split("\\s+").map(word => (word, 1))
-      })
-      .reduceByKey(_ + _)
+    // defining input stream data type (word, definition, response_topic)
+    val definitionSchema = new StructType()
+      .add(StructField("word", StringType, nullable = true))
+      .add(StructField("definition", StringType, nullable = true))
+      .add(StructField("response_topic", StringType, nullable = true))
 
-    // Publish word count results back to Kafka
-    wordCounts.foreachRDD { rdd =>
-      rdd.foreachPartition { partition =>
-        val props = new Properties()
-        props.put("bootstrap.servers", kafkaBroker)
-        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
-        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
-        val producer = new KafkaProducer[String, String](props)
+    // reading data from kafka topic
+    val inputStream = spark.readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", kafkaBroker)
+      .option("subscribe", definitionTopic)
+      .option("encoding", "UTF-8")
+      .load()
 
-        partition.foreach { case (word, count) =>
-          val result = s"""{"word":"$word","count":$count}"""
-          producer.send(new ProducerRecord[String, String]("word-count-results", word, result))
-        }
+    inputStream.printSchema() // debug purpose
 
-        producer.close()
+    // Udf function to use to transform our input data
+    val transformationUdf = udf((definition: String) => {
+      transform(definition)
+    })
+
+    // perform transformation here
+    val outputDf = inputStream.selectExpr("cast(value as string)")
+      .select(from_json(col("value"), definitionSchema).as("data"))
+      .select(col("data.word"),
+        transformationUdf(col("data.definition")) // don't forget to apply the transformation
+          .as("definition"))
+      .select(col("word"), explode(col("definition")))
+      .toDF("word", "token", "count")
+      .filter(col("word") =!= col("token"))
+      .filter(length(col("token")) > 1)
+
+    outputDf.printSchema() // debug purpose
+
+    // displaying the transformed data to the console for debug purpose
+    val streamConsoleOutput = outputDf.writeStream
+      .outputMode("append")
+      .format("console")
+      .option("truncate", "false")
+      .start()
+
+    // sending the transformed data to kafka
+    outputDf
+      .select(to_json(struct(col("word"),
+        col("token"), col("count"))).as("value")) // compute a mandatory field `value` for kafka
+      .writeStream
+      .outputMode("append")
+      .format("kafka")
+      .option("kafka.bootstrap.servers", kafkaBroker)
+      .option("topic", outputTopic)
+      .option("checkpointLocation", "/tmp/checkpoint") // required in kafka mode (the behaviour hard coded in the api!)
+      .start()
+
+    // waiting the query to complete (blocking call)
+    streamConsoleOutput.awaitTermination()
+  }
+
+  private def transform(definition: String): Map[String, Int] = {
+    val result = definition.split("\n")
+      .filter(_.nonEmpty) // removing blank lines...
+      .flatMap(_.split("\\W+"))
+      .foldLeft(Map.empty[String, Int]) {
+        (count, word) => count + (word -> (count.getOrElse(word, 0) + 1))
       }
-    }
+    // order by count
+    val orderedResult = result.toSeq.sortBy(-_._2)
+      .toMap
+    // you can apply other transformation here as per your inspiration
 
-    ssc.start()
-    ssc.awaitTermination()
+    // show most frequent words
+    orderedResult.take(10).foreach(println)
+    result
   }
 }
 ```
 
+### **Package the Application**
+```bash
+sbt package
+```
 
 
 ### **Run Script: `run-app`**
 ```bash
-./run-app
+run-app
 ```
 
 
 
 ## **Step 3: Python App - Word Count Consumer**
 
-Replace the default consumer logic with the following in `word_count_consumer.py`:
+Replace the default consumer logic with the following in `consumer.py`:
 
 ```python
 import json
@@ -254,7 +320,7 @@ if __name__ == "__main__":
 
 ### **Run the Consumer**
 ```bash
-python word_count_consumer.py
+python consumer.py
 ```
 
 
@@ -263,22 +329,25 @@ python word_count_consumer.py
 
 1. Start Kafka:
    ```bash
-   ./kafka-start
+   kafka-start
    ```
 
 2. Run the Python Producer:
    ```bash
-   python word_definition_producer.py
+   python producer.py
    ```
 
 3. Run the Spark Processor:
    ```bash
-   ./run-app
+   sbt package
+   ```
+   ```bash
+   run-app
    ```
 
 4. Run the Python Consumer:
    ```bash
-   python word_count_consumer.py
+   python consumer.py
    ```
 
 
@@ -290,6 +359,3 @@ python word_count_consumer.py
 3. **Web Dashboard**: Create a real-time web interface using Flask or Django.
 4. **Advanced NLP**: Use SpaCy or NLTK for better tokenization and stopword removal.
 
-
-
-This comprehensive tutorial covers the entire pipeline, providing a strong foundation for real-time data processing applications.
