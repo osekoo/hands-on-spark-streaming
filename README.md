@@ -67,7 +67,7 @@ User -> [Python App] -> Kafka Topic (definitions) -> [Spark/Scala App] -> Kafka 
 
 ### **Code: Word Definition Producer**
 
-Replace the default producer logic with the following code in `word_definition_producer.py`:
+Replace the default producer logic with the following code in `producer.py`:
 
 ```python
 import json
@@ -78,6 +78,7 @@ from bs4 import BeautifulSoup
 BROKER = 'localhost:9092'
 TOPIC = 'definitions'
 
+
 def fetch_definition(word):
     """
     Fetches the definition of a word from a dictionary API or web scraping.
@@ -85,8 +86,10 @@ def fetch_definition(word):
     url = f"https://www.dictionary.com/browse/{word}"
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
-    definition_tag = soup.find('span', class_='one-click-content')
-    return definition_tag.text.strip() if definition_tag else "Definition not found"
+    print(soup)
+    definition_tag = soup.find('div', id='dictionary-entry-1')
+    return definition_tag.text.strip() if definition_tag else None
+
 
 def produce_word_and_definition():
     """
@@ -104,6 +107,9 @@ def produce_word_and_definition():
                 break
 
             definition = fetch_definition(word)
+            if not definition:
+                print("ERROR: Definition not found.")
+                continue
             message = {"word": word, "definition": definition}
             producer.send(TOPIC, value=message)
             print(f"Sent to Kafka: {message}")
@@ -112,14 +118,16 @@ def produce_word_and_definition():
     finally:
         producer.close()
 
+
 if __name__ == "__main__":
     produce_word_and_definition()
+
 ```
 
 ### **Run the Producer**
 Start the producer:
 ```bash
-python word_definition_producer.py
+python producer.py
 ```
 
 ## **Step 2: Spark/Scala App - Word Count Processor**
