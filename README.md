@@ -158,11 +158,12 @@ libraryDependencies ++= Seq(
 )
 ```
 3. Update spark-submit with kafka dependencies
+Edit `run-app.sh` and replace its content with:
 ```bash
 #!/bin/bash
 spark-submit \
     --deploy-mode client \
-    --master "$SPARK_MASTER_URL" \
+    --master "spark://localhost:7077" \
     --executor-cores 4 \
     --executor-memory 2G \
     --num-executors 1 \
@@ -278,7 +279,12 @@ sbt package
 ```
 
 
-### **Run Script: `run-app`**
+### **Run Script: `spark-env`**
+```bash
+spark-env
+```
+
+### **Run Script: `run-app` from the above spark environment**
 ```bash
 run-app
 ```
@@ -343,6 +349,9 @@ python consumer.py
 3. Run the Spark Processor:
    ```bash
    sbt package
+   ```
+   ```bash
+   spark-env
    ```
    ```bash
    run-app
