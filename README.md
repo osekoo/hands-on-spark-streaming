@@ -86,7 +86,7 @@ def fetch_definition(word):
     url = f"https://www.dictionary.com/browse/{word}"
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
-    print(soup)
+    # print(soup)
     definition_tag = soup.find('div', id='dictionary-entry-1')
     return definition_tag.text.strip() if definition_tag else None
 
