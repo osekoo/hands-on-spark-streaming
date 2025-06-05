@@ -21,21 +21,6 @@ User -> [Python App] -> Kafka Topic (definitions) -> [Spark/Scala App] -> Kafka 
 
 ## **Prerequisites**
 
-1. **Install Apache Kafka**
-   - Use Docker for quick setup:
-     - [Install Docker](https://docs.docker.com/get-docker/).
-     - [Kafka with Docker Setup](https://docs.confluent.io/platform/current/quickstart/ce-docker-quickstart.html).
-
-2. **Install Apache Spark**
-   - [Download and Install Spark](https://spark.apache.org/downloads.html).
-
-3. **Install Python**
-   - [Install Python](https://www.python.org/downloads/).
-   - Install required libraries:
-     ```bash
-     pip install kafka-python requests beautifulsoup4
-     ```
-
 4. **Install Scala and SBT**
    - [Install Scala](https://www.scala-lang.org/download/).
    - [Install SBT](https://www.scala-sbt.org/download.html).
@@ -122,6 +107,12 @@ def produce_word_and_definition():
 if __name__ == "__main__":
     produce_word_and_definition()
 
+```
+
+### Start the Kafka Broker
+From the project folder, run:
+```bash
+./kafka-start
 ```
 
 ### **Run the Producer**
