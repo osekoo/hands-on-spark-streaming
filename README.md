@@ -72,7 +72,8 @@ def fetch_definition(word):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
     # print(soup)
-    definition_tag = soup.find('div', id='dictionary-entry-1')
+    # definition_tag = soup.find('div', id='dictionary-entry-1')   
+    definition_tag = soup.find('section', id='id-sec-entry-group-dcom')
     return definition_tag.text.strip() if definition_tag else None
 
 
