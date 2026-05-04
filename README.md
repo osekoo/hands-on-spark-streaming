@@ -161,7 +161,7 @@ spark-submit \
     --num-executors 1 \
     --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.2,org.apache.spark:spark-streaming-kafka-0-10_2.12:3.5.2 \
     --class "MainApp" \
-    "target/scala-2.12/spark-word-count-streaming_2.12-0.1.jar" \
+    "target/scala-2.12/spark-word-count-streaming_2.12-0.1.jar" 
 ```
 
 
@@ -278,7 +278,7 @@ spark-env
 
 ### **Run Script: `run-app` from the above spark environment**
 ```bash
-run-app
+./run-app.sh
 ```
 
 
